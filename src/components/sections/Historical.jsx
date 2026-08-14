@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  Activity, ArrowLeft, BarChart3, ChevronLeft, ChevronRight, Eye, Heart, LineChart, Target, Users, Wallet, Zap,
+  Activity, ArrowLeft, BarChart3, ChevronLeft, ChevronRight, Eye, Heart, LineChart, Target, Users,
 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChartCard, MultiMetricLineChart } from '../ui/Charts'
@@ -137,58 +137,126 @@ function FanpageHistory({ rows, platform, currentMonth, accent }) {
   )
 }
 
+const VIEW_CONFIG = {
+  result: { label: 'Resultados', accent: '#22d3ee' },
+  spend: { label: 'Inversión', accent: '#f59e0b' },
+  cpr: { label: 'Costo por resultado', accent: '#34d399' },
+}
+
+const SCOPE_CONFIG = {
+  isolated: { label: 'Aislado', icon: Target },
+  compare: { label: 'Comparar', icon: BarChart3 },
+  combined: { label: 'Todos combinados', icon: LineChart },
+  average: { label: 'Promedio', icon: Activity },
+}
+
+function FilterPills({ options, value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {Object.entries(options).map(([key, cfg]) => {
+        const Icon = cfg.icon
+        const active = value === key
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
+            style={active
+              ? { background: `${cfg.accent || '#facc15'}18`, borderColor: `${cfg.accent || '#facc15'}66` }
+              : { borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+          >
+            {Icon && <Icon className="w-3.5 h-3.5" />}
+            {cfg.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ObjectiveChips({ metrics, selected, multi, onToggle, onPick }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {metrics.map(metric => {
+        const active = selected.includes(metric.key)
+        return (
+          <button
+            key={metric.key}
+            onClick={() => multi ? onToggle(metric.key) : onPick(metric.key)}
+            className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
+            style={active ? { background: `${metric.color}18`, borderColor: `${metric.color}66` } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full mr-2" style={{ background: active ? metric.color : 'rgba(255,255,255,0.25)' }} />
+            {metric.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function PaidMediaHistory({ campanas, platform, currentMonth, accent }) {
   const paid = useMemo(() => buildPaidMediaHistory(campanas, platform, 12, currentMonth), [campanas, platform, currentMonth])
   const metrics = paid.metrics
-  const [mode, setMode] = useState('objective')
-  const [view, setView] = useState('results')
-  const [selected, setSelected] = useState(() => metrics.slice(0, Math.min(1, metrics.length)).map(m => m.key))
+
+  const [view, setView] = useState('result')
+  const [scope, setScope] = useState('isolated')
+  const [selected, setSelected] = useState(() => metrics.slice(0, 1).map(m => m.key))
   const [scale, setScale] = useState('linear')
 
-  const effectiveSelected = selected
-
-  const totalSpendSelected = effectiveSelected.includes('__total_spend__')
-  const activeMetrics = metrics.filter(m => effectiveSelected.includes(m.key))
-  const resultLines = activeMetrics.map(m => ({ key: `result_${m.key}`, name: m.label, color: m.color }))
-  const spendLines = activeMetrics.map(m => ({ key: `spend_${m.key}`, name: `Inversión · ${m.label}`, color: '#f59e0b', format: 'currency' }))
-  const cprLines = activeMetrics.map(m => ({ key: `cpr_${m.key}`, name: `Costo · ${m.label}`, color: '#34d399', format: 'currency' }))
-  const totalSpendLine = { key: 'spend_total', name: 'Inversión total', color: '#f59e0b', format: 'currency' }
-  const totalResultLine = { key: 'result_total', name: 'Resultado total', color: '#22d3ee' }
-
-  // In "Por objetivo" mode, the fast analysis is intentionally a three-line
-  // combo: result + investment + efficiency for the selected objective.
-  // In "Por KPI" mode the user chooses one analytical family at a time.
-  let lines = mode === 'objective' ? [...resultLines, ...spendLines, ...cprLines] : resultLines
-  if (mode === 'kpi' && view === 'spend') lines = totalSpendSelected ? [totalSpendLine] : spendLines
-  if (mode === 'kpi' && view === 'results' && effectiveSelected.includes('__total_results__')) lines = [totalResultLine]
-  if (mode === 'kpi' && view === 'efficiency') lines = cprLines
-
-  const switchMode = nextMode => {
-    setMode(nextMode)
-    setSelected(metrics.slice(0, Math.min(1, metrics.length)).map(m => m.key))
-    setView('results')
+  const changeScope = nextScope => {
+    setScope(nextScope)
+    if (nextScope === 'isolated') setSelected(metrics.slice(0, 1).map(m => m.key))
+    else if (nextScope === 'compare') setSelected(metrics.slice(0, Math.min(2, metrics.length)).map(m => m.key))
+    else if (nextScope === 'average') setSelected(metrics.map(m => m.key))
   }
 
-  const toggleMetric = key => {
-    setSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
-  }
+  const pickObjective = key => setSelected([key])
+  const toggleObjective = key => setSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
 
-  const selectObjective = key => setSelected([key])
+  // Series enriquecida: cpr_total (para "Todos combinados" en vista Costo por resultado)
+  // y el promedio simple de las métricas seleccionadas (para "Promedio").
+  const chartData = useMemo(() => paid.series.map(row => {
+    const cpr_total = row.spend_total > 0 && row.result_total > 0 ? row.spend_total / row.result_total : null
+    let avgField = null
+    if (scope === 'average' && selected.length) {
+      const vals = selected.map(k => row[`${view}_${k}`]).filter(v => v !== null && v !== undefined)
+      avgField = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+    }
+    return { ...row, cpr_total, [`${view}_avg`]: avgField }
+  }), [paid.series, scope, view, selected])
 
-  const objectiveSummary = mode === 'objective' && activeMetrics.length === 1 ? activeMetrics[0] : null
-  const title = mode === 'objective'
-    ? `Objetivo: ${objectiveSummary?.label || 'seleccionado'}`
-    : view === 'results' ? 'Resultados pagados' : view === 'spend' ? 'Inversión pagada' : 'Costo por resultado'
-  const subtitle = mode === 'objective'
-    ? 'Resultado + inversión + eficiencia mensual'
-    : 'Comparación mensual de las métricas seleccionadas'
+  const lines = useMemo(() => {
+    const fmt = view === 'result' ? undefined : 'currency'
+    if (scope === 'isolated') {
+      const m = metrics.find(m => m.key === selected[0])
+      return m ? [{ key: `${view}_${m.key}`, name: m.label, color: m.color, format: fmt }] : []
+    }
+    if (scope === 'compare') {
+      return metrics.filter(m => selected.includes(m.key)).map(m => ({ key: `${view}_${m.key}`, name: m.label, color: m.color, format: fmt }))
+    }
+    if (scope === 'combined') {
+      return [{ key: `${view}_total`, name: 'Total combinado', color: accent, format: fmt }]
+    }
+    // average
+    return [{ key: `${view}_avg`, name: 'Promedio', color: accent, format: fmt }]
+  }, [scope, view, selected, metrics, accent])
+
+  const title = `${VIEW_CONFIG[view].label} · ${SCOPE_CONFIG[scope].label}`
+  const subtitle = scope === 'isolated'
+    ? `Métrica única, sin mezclar con otros objetivos`
+    : scope === 'compare'
+      ? `Comparando ${selected.length} objetivo${selected.length === 1 ? '' : 's'} lado a lado`
+      : scope === 'combined'
+        ? `Suma de todos los objetivos activos cada mes`
+        : `Promedio simple entre los objetivos seleccionados`
 
   return (
     <section className="space-y-4 pt-2">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-lg font-bold text-white">Rendimiento de Paid Media</h2>
-          <p className="text-xs text-white/45 mt-1">Analiza resultados, inversión o eficiencia por objetivo sin mezclar unidades en un mismo eje.</p>
+          <p className="text-xs text-white/45 mt-1">Elige qué métrica ver y con qué alcance — la gráfica se arma sola con esa combinación.</p>
         </div>
         <ScaleToggle scale={scale} onChange={setScale} />
       </div>
@@ -197,57 +265,34 @@ function PaidMediaHistory({ campanas, platform, currentMonth, accent }) {
         <div className="glass-card rounded-2xl p-8 text-center text-white/40 text-sm">No hay campañas históricas para esta plataforma.</div>
       ) : (
         <>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => switchMode('objective')} className={`px-4 py-2 rounded-xl text-xs font-semibold border transition ${mode === 'objective' ? 'bg-white/12 text-white border-white/20' : 'bg-white/5 text-white/45 border-white/10'}`}>Por objetivo</button>
-            <button onClick={() => switchMode('kpi')} className={`px-4 py-2 rounded-xl text-xs font-semibold border transition ${mode === 'kpi' ? 'bg-white/12 text-white border-white/20' : 'bg-white/5 text-white/45 border-white/10'}`}>Por KPI</button>
-            {mode === 'kpi' && <>
-              <div className="w-px h-8 bg-white/10 mx-1" />
-              <button onClick={() => setView('results')} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${view === 'results' ? 'text-white border-cyan-400/30 bg-cyan-400/10' : 'text-white/45 border-white/10 bg-white/5'}`}>Resultados</button>
-              <button onClick={() => setView('spend')} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${view === 'spend' ? 'text-white border-amber-400/30 bg-amber-400/10' : 'text-white/45 border-white/10 bg-white/5'}`}>Inversión</button>
-              <button onClick={() => setView('efficiency')} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${view === 'efficiency' ? 'text-white border-emerald-400/30 bg-emerald-400/10' : 'text-white/45 border-white/10 bg-white/5'}`}>Eficiencia</button>
-            </>}
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">Qué métrica</p>
+            <FilterPills options={VIEW_CONFIG} value={view} onChange={setView} />
           </div>
 
-          {mode === 'objective' ? (
-            <div className="flex flex-wrap gap-2">
-              {metrics.map(metric => (
-                <button key={metric.key} onClick={() => selectObjective(metric.key)} className={`px-3 py-2 rounded-xl border text-xs font-semibold transition ${effectiveSelected.includes(metric.key) ? 'text-white' : 'text-white/45 hover:text-white'}`} style={effectiveSelected.includes(metric.key) ? { background: `${metric.color}18`, borderColor: `${metric.color}66` } : { borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
-                  <span className="w-2 h-2 inline-block rounded-full mr-2" style={{ background: metric.color }} />
-                  Campañas de {metric.label.toLowerCase()}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <>
-              <MetricSelector metrics={metrics.map(m => ({ ...m, label: m.label }))} selected={effectiveSelected} onToggle={key => {
-                if (key === '__all__') return setSelected(metrics.map(m => m.key))
-                if (key === '__clear__') return setSelected([])
-                toggleMetric(key)
-              }} accent={accent} />
-              {view === 'spend' && (
-                <div className="pt-1">
-                  <button onClick={() => setSelected(['__total_spend__'])} className={`px-3 py-2 rounded-xl border text-xs font-semibold transition ${effectiveSelected.includes('__total_spend__') ? 'text-white bg-amber-400/10 border-amber-400/30' : 'text-white/45 bg-white/5 border-white/10'}`}>Ver inversión total de la red</button>
-                </div>
-              )}
-              {view === 'results' && (
-                <div className="pt-1">
-                  <button onClick={() => setSelected(['__total_results__'])} className={`px-3 py-2 rounded-xl border text-xs font-semibold transition ${effectiveSelected.includes('__total_results__') ? 'text-white bg-cyan-400/10 border-cyan-400/30' : 'text-white/45 bg-white/5 border-white/10'}`}>Ver resultado total de la red</button>
-                </div>
-              )}
-            </>
-          )}
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">Con qué alcance</p>
+            <FilterPills options={SCOPE_CONFIG} value={scope} onChange={changeScope} />
+          </div>
 
-          {mode === 'objective' && objectiveSummary && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <MiniPaidCard title={objectiveSummary.label} value="Resultado" icon={Target} color={objectiveSummary.color} />
-              <MiniPaidCard title="Inversión" value="Inversión" icon={Wallet} color="#f59e0b" />
-              <MiniPaidCard title="Eficiencia" value={objectiveSummary.label.toLowerCase().includes('alcance') ? 'CPM' : 'Costo / resultado'} icon={Zap} color="#34d399" />
+          {(scope === 'isolated' || scope === 'compare' || scope === 'average') && (
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">
+                {scope === 'isolated' ? 'Objetivo' : 'Objetivos incluidos'}
+              </p>
+              <ObjectiveChips
+                metrics={metrics}
+                selected={selected}
+                multi={scope !== 'isolated'}
+                onToggle={toggleObjective}
+                onPick={pickObjective}
+              />
             </div>
           )}
 
           <ChartCard title={title} subtitle={`${subtitle} · meses sin actividad quedan como ausencia, no como cero`} allowLogScale={false}>
             {({ expanded }) => (
-              <MultiMetricLineChart data={paid.series} lines={lines} scale={scale} expanded={expanded} connectNulls percentKeys={[]} />
+              <MultiMetricLineChart data={chartData} lines={lines} scale={scale} expanded={expanded} connectNulls percentKeys={[]} />
             )}
           </ChartCard>
 
@@ -258,22 +303,12 @@ function PaidMediaHistory({ campanas, platform, currentMonth, accent }) {
   )
 }
 
-function MiniPaidCard({ title, value, icon: Icon, color }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-white/40 font-semibold"><Icon className="w-3.5 h-3.5" style={{ color }} /> {value}</div>
-      <p className="text-sm font-semibold text-white mt-2">{title}</p>
-      <p className="text-xs text-white/40 mt-1">La selección controla la gráfica de abajo.</p>
-    </div>
-  )
-}
-
 function PaidMediaLegendNote({ view }) {
-  const text = view === 'results'
+  const text = view === 'result'
     ? 'Resultados: suma de la columna Resultado de Campañas por mes.'
     : view === 'spend'
       ? 'Inversión: suma del gasto registrado en Campañas por mes.'
-      : 'Eficiencia: CPM para alcance y costo por resultado para los demás objetivos.'
+      : 'Costo por resultado: CPM para alcance y costo por resultado para los demás objetivos.'
   return <p className="text-[11px] text-white/35">{text} Las etiquetas solo aparecen cuando existe un dato real.</p>
 }
 

@@ -152,11 +152,11 @@ export function enrichCampaignRows(campanas = [], platform) {
   return campanas.filter(c => getCampaignPlatform(c) === platform)
 }
 
-function campaignMetricKey(row) {
+export function campaignMetricKey(row) {
   return cleanKey(row?.objetivo_detectado || row?.objetivo || row?._objective || row?.metrica || 'resultado') || 'resultado'
 }
 
-function campaignMetricLabel(row) {
+export function campaignMetricLabel(row) {
   return row?.objetivo_detectado || row?.objetivo || row?._objective || row?.metrica || 'Resultado'
 }
 

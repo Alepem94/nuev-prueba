@@ -82,6 +82,14 @@ export function formatPercent(value, decimals = 1) {
   return sign + truncTo(num, decimals) + '%'
 }
 
+// Like formatPercent but without a forced +/- sign — for displaying a rate as
+// a value (e.g. "3.2%"), not as a variation (e.g. "+3.2%").
+export function formatPercentPlain(value, decimals = 1) {
+  const num = safeNumber(value, NaN)
+  if (isNaN(num)) return '-'
+  return truncTo(num, decimals) + '%'
+}
+
 export function formatDecimal(value, decimals = 2) {
   const num = safeNumber(value, NaN)
   if (isNaN(num)) return '-'

@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, ChevronLeft, ChevronRight, Eye, Heart, LineChart, Target, Users,
+  Wallet, Zap, SlidersHorizontal, RotateCcw, TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChartCard, MultiMetricLineChart } from '../ui/Charts'
 import { SectionHeader } from '../ui/SectionHeader'
-import { safeNumber, formatMonthShort, formatNumber } from '../../utils/format'
+import { safeNumber, formatMonthShort, formatMonthLong, formatNumber, formatCurrency, formatPercent, formatPercentPlain } from '../../utils/format'
 import {
   buildPlatformHistory,
-  buildPaidMediaHistory,
   buildAccountHistory,
   getMetricHighlights,
   getSocialMetricConfig,
 } from '../../utils/historicalAnalytics'
+import { buildPaidMediaKPICatalog, computeKpiInsights } from '../../utils/paidMediaAnalytics'
 
 const ICONS = { users: Users, eye: Eye, heart: Heart, activity: Activity }
 
@@ -137,181 +138,232 @@ function FanpageHistory({ rows, platform, currentMonth, accent }) {
   )
 }
 
-const VIEW_CONFIG = {
-  result: { label: 'Resultados', accent: '#22d3ee' },
-  spend: { label: 'Inversión', accent: '#f59e0b' },
-  cpr: { label: 'Costo por resultado', accent: '#34d399' },
+const QUICK_MODES = {
+  resultados: { label: 'Resultados', icon: BarChart3, desc: 'Los resultados principales de cada objetivo activo' },
+  eficiencia: { label: 'Eficiencia', icon: Zap, desc: 'Costo por resultado de cada objetivo' },
+  inversion: { label: 'Inversión', icon: Wallet, desc: 'Inversión total del mes' },
+  personalizado: { label: 'Personalizado', icon: SlidersHorizontal, desc: 'Tu propia combinación de KPIs' },
 }
 
-const SCOPE_CONFIG = {
-  isolated: { label: 'Aislado', icon: Target },
-  compare: { label: 'Comparar', icon: BarChart3 },
-  combined: { label: 'Todos combinados', icon: LineChart },
-  average: { label: 'Promedio', icon: Activity },
+function quickModeSelection(kpis, mode) {
+  if (mode === 'resultados') return kpis.filter(k => k.role === 'result').map(k => k.id)
+  if (mode === 'eficiencia') return kpis.filter(k => k.role === 'cost').map(k => k.id)
+  if (mode === 'inversion') return ['spend::__total__']
+  return []
 }
 
-function FilterPills({ options, value, onChange }) {
+function KpiChipGroup({ title, kpis, selected, onToggle }) {
+  if (!kpis.length) return null
   return (
-    <div className="flex flex-wrap gap-2">
-      {Object.entries(options).map(([key, cfg]) => {
-        const Icon = cfg.icon
-        const active = value === key
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
-            style={active
-              ? { background: `${cfg.accent || '#facc15'}18`, borderColor: `${cfg.accent || '#facc15'}66` }
-              : { borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
-          >
-            {Icon && <Icon className="w-3.5 h-3.5" />}
-            {cfg.label}
-          </button>
-        )
-      })}
+    <div>
+      <p className="text-[10px] uppercase tracking-widest text-white/35 font-semibold mb-1.5">{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {kpis.map(kpi => {
+          const active = selected.includes(kpi.id)
+          const chipLabel = kpi.role === 'investment' || kpi.role === 'investment-total' ? 'Inversión' : kpi.label
+          return (
+            <button
+              key={kpi.id}
+              onClick={() => onToggle(kpi.id)}
+              className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
+              style={active ? { background: `${kpi.color}20`, borderColor: `${kpi.color}70` } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}
+            >
+              <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: active ? kpi.color : 'rgba(255,255,255,0.25)' }} />
+              {chipLabel}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-function ObjectiveChips({ metrics, selected, multi, onToggle, onPick }) {
+function statValue(kpi, value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  if (kpi.unit === 'currency') return formatCurrency(value)
+  if (kpi.unit === 'percent') return formatPercentPlain(value, 2)
+  return formatNumber(value)
+}
+
+function statVariation(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return formatPercent(value, 1)
+}
+
+function VariationTag({ value }) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return <span className="text-white/30">—</span>
+  }
+  const positive = value >= 0
   return (
-    <div className="flex flex-wrap gap-2">
-      {metrics.map(metric => {
-        const active = selected.includes(metric.key)
-        return (
-          <button
-            key={metric.key}
-            onClick={() => multi ? onToggle(metric.key) : onPick(metric.key)}
-            className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
-            style={active ? { background: `${metric.color}18`, borderColor: `${metric.color}66` } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}
-          >
-            <span className="inline-block w-1.5 h-1.5 rounded-full mr-2" style={{ background: active ? metric.color : 'rgba(255,255,255,0.25)' }} />
-            {metric.label}
-          </button>
-        )
-      })}
+    <span className={`inline-flex items-center gap-0.5 font-semibold ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+      {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+      {statVariation(value)}
+    </span>
+  )
+}
+
+function KpiInsightCard({ kpi, insights, currentMonth }) {
+  if (!insights) return null
+  const isInvestment = kpi.role === 'investment' || kpi.role === 'investment-total'
+  const bestLabel = isInvestment ? 'Mayor inversión' : 'Mejor mes'
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 min-w-[240px] flex-1">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-2 h-2 rounded-full" style={{ background: kpi.color }} />
+        <p className="text-xs font-bold text-white truncate">{kpi.role === 'investment' || kpi.role === 'investment-total' ? 'Inversión' : kpi.label}</p>
+      </div>
+      <p className="text-xl font-bold text-white font-display">{statValue(kpi, insights.currentValue)}</p>
+      <p className="text-[10px] text-white/35 mb-3">{formatMonthShort(currentMonth)}</p>
+
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+        <div className="text-white/40">{bestLabel}</div>
+        <div className="text-white text-right font-semibold">{statValue(kpi, insights.bestValue)} <span className="text-white/30 font-normal">({formatMonthShort(insights.bestMonth)})</span></div>
+
+        <div className="text-white/40">Promedio ({formatMonthShort(insights.currentMonth)?.split(' ')[0] === 'Ene' ? 'Ene' : `Ene–${formatMonthShort(insights.currentMonth).split(' ')[0]}`})</div>
+        <div className="text-white text-right font-semibold">{statValue(kpi, insights.average)}</div>
+
+        <div className="text-white/40">Vs. promedio</div>
+        <div className="text-right"><VariationTag value={insights.vsAverage} /></div>
+
+        <div className="text-white/40">Vs. mes anterior</div>
+        <div className="text-right">{insights.hasPrevMonth ? <VariationTag value={insights.vsPrevMonth} /> : <span className="text-white/30">—</span>}</div>
+
+        <div className="text-white/40">Vs. enero</div>
+        <div className="text-right">{insights.isJanuary ? <span className="text-white/30">—</span> : <VariationTag value={insights.vsJanuary} />}</div>
+
+        {kpi.accumulate && (
+          <>
+            <div className="text-white/40">{isInvestment ? 'Inversión acumulada' : 'Acumulado'}</div>
+            <div className="text-white text-right font-semibold">{statValue(kpi, insights.accumulated)}</div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
-function PaidMediaHistory({ campanas, platform, currentMonth, accent }) {
-  const paid = useMemo(() => buildPaidMediaHistory(campanas, platform, 12, currentMonth), [campanas, platform, currentMonth])
-  const metrics = paid.metrics
+function PaidMediaHistory({ campanas, platform, currentMonth, accent, socialRows = [] }) {
+  const catalog = useMemo(
+    () => buildPaidMediaKPICatalog(campanas, platform, socialRows, currentMonth),
+    [campanas, platform, socialRows, currentMonth]
+  )
+  const { months, objectives, kpis } = catalog
+  const kpiById = useMemo(() => new Map(kpis.map(k => [k.id, k])), [kpis])
 
-  const [view, setView] = useState('result')
-  const [scope, setScope] = useState('isolated')
-  const [selected, setSelected] = useState(() => metrics.slice(0, 1).map(m => m.key))
+  const [quickMode, setQuickMode] = useState('resultados')
+  const [selected, setSelected] = useState(() => quickModeSelection(kpis, 'resultados'))
   const [scale, setScale] = useState('linear')
 
-  const changeScope = nextScope => {
-    setScope(nextScope)
-    if (nextScope === 'isolated') setSelected(metrics.slice(0, 1).map(m => m.key))
-    else if (nextScope === 'compare') setSelected(metrics.slice(0, Math.min(2, metrics.length)).map(m => m.key))
-    else if (nextScope === 'average') setSelected(metrics.map(m => m.key))
+  const applyQuickMode = (mode) => {
+    setQuickMode(mode)
+    setSelected(quickModeSelection(kpis, mode))
   }
 
-  const pickObjective = key => setSelected([key])
-  const toggleObjective = key => setSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  const toggleKpi = (id) => {
+    setQuickMode('personalizado')
+    setSelected(prev => prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id])
+  }
 
-  // Series enriquecida: cpr_total (para "Todos combinados" en vista Costo por resultado)
-  // y el promedio simple de las métricas seleccionadas (para "Promedio").
-  const chartData = useMemo(() => paid.series.map(row => {
-    const cpr_total = row.spend_total > 0 && row.result_total > 0 ? row.spend_total / row.result_total : null
-    let avgField = null
-    if (scope === 'average' && selected.length) {
-      const vals = selected.map(k => row[`${view}_${k}`]).filter(v => v !== null && v !== undefined)
-      avgField = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
-    }
-    return { ...row, cpr_total, [`${view}_avg`]: avgField }
-  }), [paid.series, scope, view, selected])
+  const clearSelection = () => {
+    setQuickMode('personalizado')
+    setSelected([])
+  }
 
-  const lines = useMemo(() => {
-    const fmt = view === 'result' ? undefined : 'currency'
-    if (scope === 'isolated') {
-      const m = metrics.find(m => m.key === selected[0])
-      return m ? [{ key: `${view}_${m.key}`, name: m.label, color: m.color, format: fmt }] : []
-    }
-    if (scope === 'compare') {
-      return metrics.filter(m => selected.includes(m.key)).map(m => ({ key: `${view}_${m.key}`, name: m.label, color: m.color, format: fmt }))
-    }
-    if (scope === 'combined') {
-      return [{ key: `${view}_total`, name: 'Total combinado', color: accent, format: fmt }]
-    }
-    // average
-    return [{ key: `${view}_avg`, name: 'Promedio', color: accent, format: fmt }]
-  }, [scope, view, selected, metrics, accent])
+  const selectedKpis = selected.map(id => kpiById.get(id)).filter(Boolean)
 
-  const title = `${VIEW_CONFIG[view].label} · ${SCOPE_CONFIG[scope].label}`
-  const subtitle = scope === 'isolated'
-    ? `Métrica única, sin mezclar con otros objetivos`
-    : scope === 'compare'
-      ? `Comparando ${selected.length} objetivo${selected.length === 1 ? '' : 's'} lado a lado`
-      : scope === 'combined'
-        ? `Suma de todos los objetivos activos cada mes`
-        : `Promedio simple entre los objetivos seleccionados`
+  const chartData = useMemo(() => months.map(mes => {
+    const row = { mes }
+    for (const kpi of kpis) row[kpi.id] = kpi.series[mes]
+    return row
+  }), [months, kpis])
+
+  const lines = selectedKpis.map(kpi => ({
+    key: kpi.id,
+    name: kpi.role === 'investment' || kpi.role === 'investment-total' ? `Inversión · ${kpi.objectiveKey === '__total__' ? 'Total' : kpi.objectiveKey}` : kpi.label,
+    color: kpi.color,
+    format: kpi.unit === 'currency' ? 'currency' : undefined,
+  }))
+  const percentKeys = selectedKpis.filter(k => k.unit === 'percent').map(k => k.id)
+
+  const totalInvestmentKpi = kpiById.get('spend::__total__')
+  const perObjectiveKpis = kpis.filter(k => k.role !== 'investment-total')
 
   return (
     <section className="space-y-4 pt-2">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-lg font-bold text-white">Rendimiento de Paid Media</h2>
-          <p className="text-xs text-white/45 mt-1">Elige qué métrica ver y con qué alcance — la gráfica se arma sola con esa combinación.</p>
+          <p className="text-xs text-white/45 mt-1">
+            Analizando {formatMonthLong(currentMonth)} — histórico desde enero
+          </p>
         </div>
         <ScaleToggle scale={scale} onChange={setScale} />
       </div>
 
-      {metrics.length === 0 ? (
+      {kpis.length <= 1 ? (
         <div className="glass-card rounded-2xl p-8 text-center text-white/40 text-sm">No hay campañas históricas para esta plataforma.</div>
       ) : (
         <>
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">Qué métrica</p>
-            <FilterPills options={VIEW_CONFIG} value={view} onChange={setView} />
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(QUICK_MODES).map(([key, cfg]) => {
+              const Icon = cfg.icon
+              const active = quickMode === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => key === 'personalizado' ? setQuickMode('personalizado') : applyQuickMode(key)}
+                  className={`px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 ${active ? 'text-white' : 'text-white/45 hover:text-white'}`}
+                  style={active ? { background: `${accent}1a`, borderColor: `${accent}66` } : { borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {cfg.label}
+                </button>
+              )
+            })}
+            <div className="flex-1" />
+            <button onClick={clearSelection} className="px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03] text-white/40 hover:text-white text-xs font-semibold flex items-center gap-1.5">
+              <RotateCcw className="w-3.5 h-3.5" /> Limpiar selección
+            </button>
           </div>
 
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">Con qué alcance</p>
-            <FilterPills options={SCOPE_CONFIG} value={scope} onChange={changeScope} />
-          </div>
-
-          {(scope === 'isolated' || scope === 'compare' || scope === 'average') && (
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-2">
-                {scope === 'isolated' ? 'Objetivo' : 'Objetivos incluidos'}
-              </p>
-              <ObjectiveChips
-                metrics={metrics}
-                selected={selected}
-                multi={scope !== 'isolated'}
-                onToggle={toggleObjective}
-                onPick={pickObjective}
-              />
-            </div>
-          )}
-
-          <ChartCard title={title} subtitle={`${subtitle} · meses sin actividad quedan como ausencia, no como cero`} allowLogScale={false}>
-            {({ expanded }) => (
-              <MultiMetricLineChart data={chartData} lines={lines} scale={scale} expanded={expanded} connectNulls percentKeys={[]} />
+          <div className="space-y-3">
+            {totalInvestmentKpi && (
+              <KpiChipGroup title="General" kpis={[totalInvestmentKpi]} selected={selected} onToggle={toggleKpi} />
             )}
-          </ChartCard>
+            {objectives.map(obj => (
+              <KpiChipGroup
+                key={obj.key}
+                title={obj.label}
+                kpis={perObjectiveKpis.filter(k => k.objectiveKey === obj.key)}
+                selected={selected}
+                onToggle={toggleKpi}
+              />
+            ))}
+          </div>
 
-          <PaidMediaLegendNote view={view} />
+          {selectedKpis.length === 0 ? (
+            <div className="glass-card rounded-2xl p-8 text-center text-white/40 text-sm">Selecciona al menos un KPI para ver su evolución.</div>
+          ) : (
+            <>
+              <ChartCard title="Evolución histórica" subtitle={`${selectedKpis.length} KPI${selectedKpis.length === 1 ? '' : 's'} seleccionado${selectedKpis.length === 1 ? '' : 's'}`} allowLogScale={false}>
+                {({ expanded }) => (
+                  <MultiMetricLineChart data={chartData} lines={lines} scale={scale} expanded={expanded} connectNulls={false} percentKeys={percentKeys} />
+                )}
+              </ChartCard>
+
+              <div className="flex flex-wrap gap-3">
+                {selectedKpis.map(kpi => (
+                  <KpiInsightCard key={kpi.id} kpi={kpi} insights={computeKpiInsights(kpi, months, currentMonth)} currentMonth={currentMonth} />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </section>
   )
 }
-
-function PaidMediaLegendNote({ view }) {
-  const text = view === 'result'
-    ? 'Resultados: suma de la columna Resultado de Campañas por mes.'
-    : view === 'spend'
-      ? 'Inversión: suma del gasto registrado en Campañas por mes.'
-      : 'Costo por resultado: CPM para alcance y costo por resultado para los demás objetivos.'
-  return <p className="text-[11px] text-white/35">{text} Las etiquetas solo aparecen cuando existe un dato real.</p>
-}
-
 
 export function AccountHistoricalCarousel({ historical, selectedMonth, theme }) {
   const [index, setIndex] = useState(0)
@@ -397,7 +449,7 @@ export function PlatformHistory({ platform, historical = [], campanas = [], curr
           <Target className="w-4 h-4" style={{ color: '#f59e0b' }} />
           <span className="text-sm font-semibold text-white">Paid Media</span>
         </div>
-        <PaidMediaHistory campanas={campanas} platform={platform} currentMonth={currentMonth} accent={accent} />
+        <PaidMediaHistory campanas={campanas} platform={platform} currentMonth={currentMonth} accent={accent} socialRows={rows} />
       </div>
     </div>
   )

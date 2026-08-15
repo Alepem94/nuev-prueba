@@ -181,8 +181,17 @@ function computeDualAxisGroups(data, keys) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Enhanced tooltip
 // ─────────────────────────────────────────────────────────────────────────────
-function EnhancedTooltip({ active, payload, label, labelFormatter }) {
+function EnhancedTooltip({ active, payload, label, labelFormatter, lines }) {
   if (!active || !payload?.length) return null
+  const lineByKey = new Map((lines || []).map(l => [l.key, l]))
+  const formatEntry = (entry) => {
+    const line = lineByKey.get(entry.dataKey)
+    const n = Number(entry.value)
+    if (!Number.isFinite(n)) return '—'
+    if (line?.format === 'percent') return `${n.toFixed(2)}%`
+    if (line?.format === 'currency') return `$${formatNumberFull(n)}`
+    return formatNumberFull(n)
+  }
   return (
     <div style={{
       background: 'rgba(15,15,25,0.97)',
@@ -200,7 +209,7 @@ function EnhancedTooltip({ active, payload, label, labelFormatter }) {
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
           <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>{entry.name}:</span>
           <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, marginLeft: 'auto', paddingLeft: 12 }}>
-            {formatNumberFull(entry.value)}
+            {formatEntry(entry)}
           </span>
         </div>
       ))}
@@ -453,7 +462,7 @@ export function MultiMetricLineChart({
           />
         ))}
         <Tooltip
-          content={<EnhancedTooltip labelFormatter={formatMonthShort} />}
+          content={<EnhancedTooltip labelFormatter={formatMonthShort} lines={lines.map(l => ({ key: l.key, format: percentKeys.includes(l.key) ? 'percent' : l.format }))} />}
           cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
         />
         <Legend wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', paddingTop: 10 }} iconType="circle" />

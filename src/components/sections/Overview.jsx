@@ -3,7 +3,7 @@ import { KPICard, KPICardSkeleton } from '../ui/KPICard'
 import { SectionHeader } from '../ui/SectionHeader'
 import { ChartCard, DistributionDonut } from '../ui/Charts'
 import { AccountHistoricalCarousel } from './Historical'
-import { EditorialInsightCard, mergeLegacyObservations } from '../ui/EditorialInsights'
+import { KeyFindingsStrip, mergeLegacyObservations } from '../ui/EditorialInsights'
 import { SentimentGauge } from '../ui/SentimentGauge'
 import { safeNumber, formatCurrency, prevMonth, pctChange } from '../../utils/format'
 
@@ -104,7 +104,7 @@ export function Overview({ data, historical, selectedMonth, loading, theme, feat
       </div>
 
       {editorialHallazgos.length > 0 && (
-        <EditorialInsightCard items={editorialHallazgos} accent={theme.primary} />
+        <KeyFindingsStrip items={editorialHallazgos} accent={theme.primary} max={3} />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

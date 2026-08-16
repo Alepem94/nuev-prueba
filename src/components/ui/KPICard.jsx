@@ -13,17 +13,17 @@ function VariationBadge({ value, label, lowerIsBetter = false }) {
   const isBad = lowerIsBetter ? isPos : isNeg
   return (
     <div
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold max-w-full min-w-0
         ${isGood ? 'badge-positive' : ''}
         ${isBad ? 'badge-negative' : ''}
         ${!isPos && !isNeg ? 'badge-neutral' : ''}`}
       title={label}
     >
-      {isPos && <TrendingUp className="w-3 h-3" />}
-      {isNeg && <TrendingDown className="w-3 h-3" />}
-      {!isPos && !isNeg && <Minus className="w-2.5 h-2.5" />}
-      <span className="font-bold">{isPos ? '+' : ''}{truncTo(num, 2)}%</span>
-      {label && <span className="opacity-70 ml-0.5 whitespace-nowrap">{label}</span>}
+      {isPos && <TrendingUp className="w-3 h-3 shrink-0" />}
+      {isNeg && <TrendingDown className="w-3 h-3 shrink-0" />}
+      {!isPos && !isNeg && <Minus className="w-2.5 h-2.5 shrink-0" />}
+      <span className="font-bold shrink-0">{isPos ? '+' : ''}{truncTo(num, 2)}%</span>
+      {label && <span className="opacity-70 ml-0.5 truncate">{label}</span>}
     </div>
   )
 }
@@ -95,10 +95,10 @@ export function KPICard({
           )}
 
           {(hasVar || hasProj || hasYear) && (
-            <div className="flex flex-col items-end gap-1">
-              {hasVar && <VariationBadge value={variation} label="vs periodo anterior" lowerIsBetter={lowerIsBetter} />}
+            <div className="flex flex-col items-end gap-1 min-w-0 max-w-[62%]">
+              {hasVar && <VariationBadge value={variation} label="vs período" lowerIsBetter={lowerIsBetter} />}
               {hasProj && <VariationBadge value={variationProj} label="vs proyección" lowerIsBetter={lowerIsBetter} />}
-              {hasYear && <VariationBadge value={variationYear} label="vs año anterior" lowerIsBetter={lowerIsBetter} />}
+              {hasYear && <VariationBadge value={variationYear} label="vs año ant." lowerIsBetter={lowerIsBetter} />}
             </div>
           )}
         </div>

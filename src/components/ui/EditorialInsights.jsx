@@ -53,6 +53,36 @@ export function splitEditorialInsights(items = []) {
   return { valid, key, observations, learnings, legacy }
 }
 
+// Compact, title-focused strip for account-level "hallazgos clave" — caps at
+// 3 items and only shows tipo=clave, on purpose: this lives on the Overview
+// page and should read in 5 seconds, not repeat the detail shown later on
+// each platform's own page.
+export function KeyFindingsStrip({ items = [], accent = '#facc15', max = 3 }) {
+  const { key } = useMemo(() => splitEditorialInsights(items), [items])
+  const top = key.slice(0, max)
+  if (!top.length) return null
+
+  return (
+    <div className={`grid grid-cols-1 sm:grid-cols-2 ${top.length >= 3 ? 'lg:grid-cols-3' : ''} gap-3`}>
+      {top.map((item, i) => (
+        <motion.div
+          key={`${item.titulo || i}-${i}`}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.05 }}
+          className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+        >
+          <div className="absolute inset-y-3 left-0 w-[2px] rounded-r-full" style={{ background: accent }} />
+          <div className="pl-2">
+            <span className="text-[9px] uppercase tracking-[0.18em] font-bold" style={{ color: accent }}>Hallazgo clave</span>
+            <p className="text-sm font-semibold font-display text-white leading-snug mt-1.5">{item.titulo || 'Hallazgo'}</p>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
 export function EditorialInsightCard({ items = [], accent = '#facc15', compact = false, className = '' }) {
   const { key, observations, learnings, legacy } = useMemo(() => splitEditorialInsights(items), [items])
   const rows = [

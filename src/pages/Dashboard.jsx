@@ -366,7 +366,8 @@ export function Dashboard() {
                       data={filteredData.competencia}
                       allData={data.competencia || []}
                       selectedMonth={effectiveMonth}
-                      observaciones={filteredData.observaciones?.filter(o => o.seccion === 'competencia')}
+                      observaciones={filteredData.observaciones}
+                      hallazgos={filteredData.hallazgos}
                       loading={loading}
                       theme={theme}
                     />
@@ -374,7 +375,10 @@ export function Dashboard() {
 
                   <Route path="hallazgos" element={
                     <HallazgosSection
-                      data={filteredData.hallazgos}
+                      data={[
+                        ...(filteredData.hallazgos || []).filter(h => String(h.seccion || '').toLowerCase() === 'conclusiones'),
+                        ...(filteredData.observaciones || []).filter(o => String(o.seccion || '').toLowerCase() === 'conclusiones'),
+                      ]}
                       loading={loading}
                       theme={theme}
                     />

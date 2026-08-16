@@ -4,8 +4,9 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { formatNumber } from '../../utils/format'
 import { isNullishString, classifyEmbed, extractLinkFromEmbed, detectPlatform } from '../../utils/urls'
 
-const EMBED_HEIGHT = 480
-const FACEBOOK_EMBED_WIDTH = 500
+const EMBED_MIN_HEIGHT = 420
+const EMBED_MAX_HEIGHT = 620
+const FACEBOOK_EMBED_WIDTH = 360
 const FACEBOOK_SDK_URL = 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0'
 
 const PLATFORM_STYLES = {
@@ -471,7 +472,10 @@ export function TopPostCard({ post, type = 'alcance', platform = 'facebook', del
         </div>
       </div>
 
-      <div style={{ height: EMBED_HEIGHT, overflow: 'hidden' }}>
+      <div
+        className="post-embed-scroll"
+        style={{ minHeight: EMBED_MIN_HEIGHT, maxHeight: EMBED_MAX_HEIGHT, overflowY: 'auto', overflowX: 'hidden' }}
+      >
         <PostPreview key={previewKey} post={post} platform={platform} isVideo={isVideo} embedInfo={embedInfo} />
       </div>
 
@@ -573,8 +577,7 @@ export function TopPostsSection({ posts = [], platform = 'facebook' }) {
       </div>
       <div className={`grid gap-5 ${
         visiblePosts.length === 1 ? 'grid-cols-1 max-w-md' :
-        visiblePosts.length === 2 ? 'grid-cols-1 md:grid-cols-2' :
-        'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+        'grid-cols-1 md:grid-cols-2'
       }`}>
         {visiblePosts.map((post, i) => (
           <TopPostCard

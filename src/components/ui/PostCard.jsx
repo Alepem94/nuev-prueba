@@ -6,6 +6,7 @@ import { isNullishString, classifyEmbed, extractLinkFromEmbed, detectPlatform } 
 
 const EMBED_MIN_HEIGHT = 420
 const EMBED_MAX_HEIGHT = 620
+const EMBED_HEIGHT = EMBED_MIN_HEIGHT // usado por los estados de carga/error/imagen dentro del embed
 const FACEBOOK_EMBED_WIDTH = 360
 const FACEBOOK_SDK_URL = 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0'
 

@@ -90,6 +90,9 @@ const fieldAliases = {
   proyeccion: ['proyeccion', 'projection'],
   real: ['real', 'actual'],
   cpr_meta: ['cpr', 'cprmeta', 'cpr_meta', 'costporresultado'],
+  rtr: ['rtr'],
+  metrica_rtr: ['metricartr', 'rtrmetrica', 'rtrlabel', 'nombrertr'],
+  frecuencia: ['frecuencia', 'frequency', 'freq'],
 }
 
 function detectField(columnName) {
@@ -214,7 +217,7 @@ export function processRow(row, fieldMapping) {
     'positivo_pct', 'neutro_pct', 'negativo_pct',
     'orden', 'posts', 'engagement_pct', 'prioridad',
     'proyeccion', 'real',
-    'cpr_meta',
+    'cpr_meta', 'rtr', 'frecuencia',
   ]
   for (const field of numericFields) {
     if (extracted[field] !== undefined) {

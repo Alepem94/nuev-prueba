@@ -392,7 +392,8 @@ export function Dashboard() {
                     data={filteredData.proyecciones || []}
                     allData={(data && data.proyecciones) || []}
                     selectedMonth={effectiveMonth}
-                    campanas={filteredData.campanas}
+                    allCampanas={(data && data.campanas) || []}
+                    googleAdsData={(data && data.googleAds) || []}
                     observaciones={filteredData.observaciones?.filter(o => o.seccion === 'proyecciones')}
                     loading={loading}
                     theme={theme}

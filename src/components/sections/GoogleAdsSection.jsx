@@ -304,32 +304,27 @@ function GoogleAdsProyecciones({ rows, proyecciones = [], selectedMonth }) {
     return map
   }, [rows])
 
-  // Match each proyeccion row with real data
+  // Match each proyeccion row with real data — "real" ya no se lee del sheet,
+  // siempre se calcula desde los datos reales de Google Ads (Campañas/GoogleAds).
   const tableRows = useMemo(() => {
     return gadsProyecciones.map(p => {
       const objetivo = String(p.objetivo || '').trim()
       const metrica = String(p.metrica || '').trim()
-      const meta = safeNumber(p.meta)
       const proyeccion = safeNumber(p.proyeccion)
-      const realFromSheet = safeNumber(p.real)
 
-      // Try to get real from actual data if sheet is empty
-      let real = realFromSheet
-      if (!real) {
-        const objLower = objetivo.toLowerCase()
-        if (objLower === 'display' || metrica.toLowerCase().includes('impresiones')) {
-          real = realByType['Display']?.impresiones_visibles || 0
-        } else if (objLower === 'video' || metrica.toLowerCase().includes('visualizaciones') || metrica.toLowerCase().includes('views')) {
-          real = realByType['Video']?.views || 0
-        }
+      let real = 0
+      const objLower = objetivo.toLowerCase()
+      if (objLower === 'display' || metrica.toLowerCase().includes('impresiones')) {
+        real = realByType['Display']?.impresiones_visibles || 0
+      } else if (objLower === 'video' || metrica.toLowerCase().includes('visualizaciones') || metrica.toLowerCase().includes('views')) {
+        real = realByType['Video']?.views || 0
       }
 
-      const cumplimiento = meta > 0 && real > 0 ? (real / meta) * 100 : 0
+      const cumplimiento = proyeccion > 0 && real > 0 ? (real / proyeccion) * 100 : 0
 
       return {
         objetivo,
         metrica,
-        meta,
         proyeccion,
         real,
         cumplimiento,
@@ -348,15 +343,13 @@ function GoogleAdsProyecciones({ rows, proyecciones = [], selectedMonth }) {
           { key: 'objetivo', label: 'Tipo de Red', bold: true },
           { key: 'metrica', label: 'Métrica',
             render: v => <span className="text-white/60 text-xs capitalize">{v || '—'}</span> },
-          { key: 'meta', label: 'Meta', align: 'right',
-            render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
           { key: 'proyeccion', label: 'Proyección', align: 'right',
             render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
           { key: 'real', label: 'Real', align: 'right',
             render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
           { key: 'cumplimiento', label: 'Cumplimiento', align: 'right',
             render: (_, r) => {
-              if (!r.meta || !r.real) return <span className="text-white/30">—</span>
+              if (!r.proyeccion || !r.real) return <span className="text-white/30">—</span>
               const pct = r.cumplimiento
               const color = pct >= 100 ? 'text-emerald-300' : pct >= 80 ? 'text-yellow-300' : 'text-red-300'
               return <span className={color}>{truncTo(pct, 2)}%</span>

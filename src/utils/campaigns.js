@@ -161,10 +161,16 @@ export function buildCampaignPerformance(campaigns = [], platform, bucket = null
         metrica: objective,
         resultado: 0,
         inversion: 0,
+        impresiones: 0,
+        hasImpresiones: false,
       }
     }
     acc[key].resultado += Number.parseFloat(row.resultado) || 0
     acc[key].inversion += Number.parseFloat(row.inversion) || 0
+    if (row.impresiones !== undefined && row.impresiones !== null && String(row.impresiones).trim() !== '') {
+      acc[key].impresiones += Number.parseFloat(row.impresiones) || 0
+      acc[key].hasImpresiones = true
+    }
     return acc
   }, {})
 }

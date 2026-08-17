@@ -230,6 +230,13 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
     (hallazgos || []).filter(h => String(h.seccion || '').toLowerCase() === `${platform}-paid`),
     (observaciones || []).filter(o => String(o.seccion || '').toLowerCase() === `${platform}-paid`)
   ), [hallazgos, observaciones, platform])
+  // Hallazgos propios del desglose de Paid Media (distintos a los de arriba,
+  // junto a la Inversión Total). Usan el sufijo "-desglose" para poder
+  // cargarse de forma independiente en la hoja Hallazgos/Observaciones.
+  const paidBreakdownHallazgos = useMemo(() => mergeLegacyObservations(
+    (hallazgos || []).filter(h => String(h.seccion || '').toLowerCase() === `${platform}-paid-desglose`),
+    (observaciones || []).filter(o => String(o.seccion || '').toLowerCase() === `${platform}-paid-desglose`)
+  ), [hallazgos, observaciones, platform])
 
   // Proyecciones de esta plataforma y mes (marca ya filtrada por el hook)
   const platProy = useMemo(
@@ -402,8 +409,8 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
             </div>
           )}
 
-          {paidHallazgos.length > 0 && (
-            <BreakdownInsightsAccordion items={paidHallazgos} accent={accent} />
+          {paidBreakdownHallazgos.length > 0 && (
+            <BreakdownInsightsAccordion items={paidBreakdownHallazgos} accent={accent} />
           )}
 
           {/* ── 3. Desglose por campañas ── */}

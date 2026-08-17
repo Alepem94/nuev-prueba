@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
 import { Facebook, Instagram, Users, Eye, Heart, TrendingUp, Megaphone, DollarSign, BarChart2, ChevronDown, ChevronUp, Target, LineChart } from 'lucide-react'
-import { KPICard, KPICardSkeleton } from '../ui/KPICard'
+import { KPICard, KPICardSkeleton, VariationBadge, ComparisonLegend } from '../ui/KPICard'
 import { SectionHeader, EmptyState } from '../ui/SectionHeader'
 import { ChartCard } from '../ui/Charts'
 import { PlatformInsightsCard, PaidMediaExecutiveCard, BreakdownInsightsAccordion, mergeLegacyObservations } from '../ui/EditorialInsights'
@@ -82,35 +83,42 @@ function buildObjectiveInversionMap(campanas, platform, bucket) {
   return map
 }
 
-// ── Inversión por objetivo a nivel plataforma (todos los buckets) ────────────
-function buildPlatformObjectiveInversionMap(campanas, platform) {
+// ── Resumen de metas por objetivo a nivel plataforma ─────────────────────────
+// Reglas confirmadas: proyección/presupuesto (resultado/inversión) se SUMAN
+// entre tipos de campaña; CPR, RTR y Frecuencia se PROMEDIAN.
+function buildPlatformProjectionSummary(proyecciones, platform, month) {
   const map = {}
-  campanas
-    .filter(c => getCampaignPlatform(c) === platform)
-    .forEach(c => {
-      const key = normKey(c._objective || c.objetivo_detectado || c.objetivo || '')
-      if (!key) return
-      map[key] = (map[key] || 0) + safeNumber(c.inversion)
-    })
-  return map
-}
-
-// ── CPR Meta desde Proyecciones: promedio de cpr_meta por objetivo a nivel plataforma ──
-function buildPlatformCPRMeta(proyecciones, platform) {
-  const map = {} // objetivoKey → { sum, count }
-  for (const r of proyecciones) {
-    if (normPlat(r.plataforma) !== platform) continue
-    const cpr = safeNumber(r.cpr_meta)
-    if (cpr <= 0) continue
+  for (const r of (proyecciones || [])) {
+    if (normPlat(r.plataforma) !== platform || r.mes !== month) continue
     const objKey = normKey(r.objetivo || r.metrica || '')
     if (!objKey) continue
-    if (!map[objKey]) map[objKey] = { sum: 0, count: 0 }
-    map[objKey].sum += cpr
-    map[objKey].count += 1
+    if (!map[objKey]) {
+      map[objKey] = {
+        proyeccionSum: 0, presupuestoSum: 0,
+        cprValues: [], rtrValues: [], rtrLabel: null, frecuenciaValues: [],
+      }
+    }
+    const cell = map[objKey]
+    cell.proyeccionSum += safeNumber(r.proyeccion)
+    cell.presupuestoSum += safeNumber(r.presupuesto)
+    if (safeNumber(r.cpr_meta) > 0) cell.cprValues.push(safeNumber(r.cpr_meta))
+    if (r.rtr !== undefined && r.rtr !== null && String(r.rtr).trim() !== '' && r.metrica_rtr) {
+      cell.rtrValues.push(safeNumber(r.rtr))
+      cell.rtrLabel = r.metrica_rtr
+    }
+    if (safeNumber(r.frecuencia) > 0) cell.frecuenciaValues.push(safeNumber(r.frecuencia))
   }
+  const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
   const result = {}
-  for (const [key, val] of Object.entries(map)) {
-    result[key] = val.count > 0 ? val.sum / val.count : 0
+  for (const [key, cell] of Object.entries(map)) {
+    result[key] = {
+      proyeccionSum: cell.proyeccionSum || null,
+      presupuestoSum: cell.presupuestoSum || null,
+      cprMeta: avg(cell.cprValues),
+      rtrMeta: avg(cell.rtrValues),
+      rtrLabel: cell.rtrLabel,
+      frecuenciaMeta: avg(cell.frecuenciaValues),
+    }
   }
   return result
 }
@@ -164,6 +172,58 @@ function findCampaignPerformance(performanceMap, row) {
   return null
 }
 
+function KpiRow({ label, value, formatted, badges, lowerIsBetter = false }) {
+  const hasAnyBadge = badges.ma != null || badges.aa != null || badges.proy != null
+  return (
+    <div className="py-2.5 border-b border-white/[0.06] last:border-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[11px] text-white/45 font-medium">{label}</span>
+        <span className="text-sm font-bold font-display text-white">{formatted}</span>
+      </div>
+      {hasAnyBadge && (
+        <div className="flex flex-wrap gap-1 mt-1.5 justify-end">
+          {badges.ma != null && <VariationBadge value={badges.ma} kind="ma" lowerIsBetter={lowerIsBetter} />}
+          {badges.aa != null && <VariationBadge value={badges.aa} kind="aa" lowerIsBetter={lowerIsBetter} />}
+          {badges.proy != null && <VariationBadge value={badges.proy} kind="proy" lowerIsBetter={lowerIsBetter} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ObjectiveResultCard({ card, accent, delay = 0 }) {
+  const Icon = metricStyle(card.label).icon
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: delay * 0.06 }}
+      className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="p-1.5 rounded-lg" style={{ background: `${accent}20` }}>
+          <Icon className="w-3.5 h-3.5" style={{ color: accent }} />
+        </span>
+        <p className="text-sm font-bold text-white capitalize">{card.label}</p>
+      </div>
+
+      <div>
+        <KpiRow label="Resultado" formatted={formatNumber(card.resultado.real)} badges={card.resultado} />
+        <KpiRow label="Inversión" formatted={formatCurrency(card.inversion.real)} badges={card.inversion} />
+        {card.costo && (
+          <KpiRow label="Costo por resultado" formatted={`$${formatDecimal(card.costo.real, 2)}`} badges={card.costo} lowerIsBetter />
+        )}
+        {card.rtr && card.rtr.real != null && (
+          <KpiRow label={card.rtr.label} formatted={`${truncTo(card.rtr.real, 2)}%`} badges={card.rtr} />
+        )}
+        {card.frecuencia && card.frecuencia.real != null && (
+          <KpiRow label="Frecuencia" formatted={formatDecimal(card.frecuencia.real, 2)} badges={card.frecuencia} />
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 export function PaidMediaSection({ platform, month, campanas, allCampanas = [], proyecciones, accent, hallazgos = [], observaciones = [] }) {
   const [bucket, setBucket] = useState('mensual')
   const paidHallazgos = useMemo(() => mergeLegacyObservations(
@@ -210,80 +270,51 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
 
   if (platProy.length === 0 && inversionTotal === 0) return null
 
-  // Totales del mes agrupados por MÉTRICA (no suma única)
-  const metricTotals = useMemo(() => {
-    const metaByKey = {}
-    const labelByKey = {}
-    for (const r of platProy) {
-      const key = normKey(r.metrica || r.objetivo || '')
-      if (!key) continue
-      metaByKey[key] = (metaByKey[key] || 0) + safeNumber(r.meta)
-      labelByKey[key] = r.metrica || r.objetivo
-    }
+
+  const projectionSummary = useMemo(
+    () => buildPlatformProjectionSummary(proyecciones, platform, month),
+    [proyecciones, platform, month]
+  )
+
+  const objectiveCards = useMemo(() => {
     return Object.entries(platformPerformance)
-      .map(([key, actual]) => ({
-        metrica: labelByKey[key] || actual.metrica || actual.objetivo,
-        resultado: actual.resultado,
-        meta: metaByKey[key] || 0,
-      }))
-      .filter(m => m.resultado > 0)
-      .sort((a, b) => b.resultado - a.resultado)
-  }, [platProy, platformPerformance])
+      .filter(([, actual]) => actual.resultado > 0 || actual.inversion > 0)
+      .map(([key, actual]) => {
+        const label = actual.objetivo || actual.metrica || key
+        const prevActual = prevPlatformPerformance[key]
+        const yearActual = yearPlatformPerformance[key]
+        const meta = projectionSummary[key] || {}
+        const cpm = isCPM(label)
 
-  // Previous month totals by metric (for vs anterior badge)
-  const prevMetricMap = useMemo(() => {
-    const map = {}
-    for (const [key, actual] of Object.entries(prevPlatformPerformance)) map[key] = actual.resultado
-    return map
-  }, [prevPlatformPerformance])
+        const cprOf = a => a?.resultado > 0 ? (cpm ? (a.inversion / a.resultado) * 1000 : a.inversion / a.resultado) : null
+        const cprReal = cprOf(actual), cprPrev = cprOf(prevActual), cprYear = cprOf(yearActual)
 
-  const yearMetricMap = useMemo(() => {
-    const map = {}
-    for (const [key, actual] of Object.entries(yearPlatformPerformance)) map[key] = actual.resultado
-    return map
-  }, [yearPlatformPerformance])
+        const hasRtr = !!meta.rtrLabel
+        const rtrOf = a => hasRtr && a?.hasImpresiones && a.impresiones > 0 ? (a.resultado / a.impresiones) * 100 : null
+        const rtrReal = rtrOf(actual), rtrPrev = rtrOf(prevActual), rtrYear = rtrOf(yearActual)
 
-  // ── Mapa inversión por objetivo a nivel plataforma (todos los grupos) ──
-  const platObjInvMap = useMemo(
-    () => buildPlatformObjectiveInversionMap(campanas, platform),
-    [campanas, platform]
-  )
+        const frecOf = a => cpm && a?.hasImpresiones && a.resultado > 0 ? a.impresiones / a.resultado : null
+        const frecReal = frecOf(actual), frecPrev = frecOf(prevActual), frecYear = frecOf(yearActual)
 
-  // ── CPR por métrica a nivel plataforma: inversión(objetivo) / resultado(objetivo) ──
-  // Intenta matchear por metrica Y por objetivo (pueden tener nombres distintos)
-  const metricObjectiveMap = useMemo(() => {
-    const metricToObj = {}
-    const objToMetric = {}
-    for (const r of platProy) {
-      const mk = normKey(r.metrica || '')
-      const ok = normKey(r.objetivo || '')
-      if (mk && ok) { metricToObj[mk] = ok; objToMetric[ok] = mk }
-    }
-    return { metricToObj, objToMetric }
-  }, [platProy])
+        const withVariations = (real, prev, year, metaVal) => ({
+          real,
+          ma: (real != null && prev != null) ? pctChange(real, prev) : null,
+          aa: (real != null && year != null) ? pctChange(real, year) : null,
+          proy: (real != null && metaVal > 0) ? pctChange(real, metaVal) : null,
+          metaValue: metaVal || null,
+        })
 
-  const platformCPRs = useMemo(() => {
-    const { metricToObj, objToMetric } = metricObjectiveMap
-    const result = metricTotals.map(m => {
-      const key = normKey(m.metrica || '')
-      // Buscar inversión: primero por key directo, luego por objetivo mapeado
-      const altKey = metricToObj[key] || objToMetric[key]
-      const inv = platObjInvMap[key] || (altKey ? platObjInvMap[altKey] : 0)
-      // CPM: (inversión / alcance) × 1000; otros: inversión / resultado
-      const cpr = m.resultado > 0
-        ? isCPM(m.metrica) ? (inv / m.resultado) * 1000 : inv / m.resultado
-        : 0
-      return { metrica: m.metrica, key, cpr, inv }
-    }).filter(c => c.cpr > 0)
-
-    return result
-  }, [metricTotals, platObjInvMap, metricObjectiveMap])
-
-  // ── CPR Meta a nivel plataforma (promedio desde sheet) ──
-  const platCPRMetaMap = useMemo(
-    () => buildPlatformCPRMeta(platProy, platform),
-    [platProy, platform]
-  )
+        return {
+          key, label, isAlcance: cpm,
+          resultado: withVariations(actual.resultado, prevActual?.resultado, yearActual?.resultado, meta.proyeccionSum),
+          inversion: withVariations(actual.inversion, prevActual?.inversion, yearActual?.inversion, meta.presupuestoSum),
+          costo: cprReal != null ? withVariations(cprReal, cprPrev, cprYear, meta.cprMeta) : null,
+          rtr: hasRtr ? { ...withVariations(rtrReal, rtrPrev, rtrYear, meta.rtrMeta), label: meta.rtrLabel } : null,
+          frecuencia: cpm ? withVariations(frecReal, frecPrev, frecYear, meta.frecuenciaMeta) : null,
+        }
+      })
+      .sort((a, b) => b.resultado.real - a.resultado.real)
+  }, [platformPerformance, prevPlatformPerformance, yearPlatformPerformance, projectionSummary])
 
   const groupPerformance = useMemo(
     () => buildCampaignPerformance(campanas, platform, bucket),
@@ -320,7 +351,7 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
   // Subtítulo del header
   const subtitle = [
     inversionTotal > 0 ? `${formatCurrency(inversionTotal)} inversión` : '',
-    metricTotals.length > 0 ? `${metricTotals.length} métrica${metricTotals.length !== 1 ? 's' : ''}` : '',
+    objectiveCards.length > 0 ? `${objectiveCards.length} objetivo${objectiveCards.length !== 1 ? 's' : ''}` : '',
     groups.length > 1 ? `${groups.length} grupos` : '',
   ].filter(Boolean).join(' · ')
 
@@ -338,85 +369,36 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
 
       <div className="p-5 space-y-6" style={{ background: 'rgba(0,0,0,0.28)' }}>
 
-          {/* ── Totales del mes + lectura ejecutiva ── */}
+          {/* ── 1. Inversión Total del mes ── */}
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] gap-4 items-stretch">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-3">
-                Totales del mes
+                Inversión total del mes
               </p>
-              <div className={`grid gap-3 ${
-                metricTotals.length === 0 ? 'grid-cols-1' :
-                (metricTotals.length + 1) <= 2 ? 'grid-cols-2' :
-                (metricTotals.length + 1) <= 3 ? 'grid-cols-3' :
-                'grid-cols-2 lg:grid-cols-4'
-              }`}>
-              {inversionTotal > 0 && (
+              <div className="grid grid-cols-1 max-w-xs gap-3">
                 <KPICard title="Inversión Total" value={inversionTotal} icon={DollarSign}
                   accentColor="#f59e0b" formatter={formatCurrency}
                   variation={prevInversion > 0 ? pctChange(inversionTotal, prevInversion) : null}
                   variationYear={yearInversion > 0 ? pctChange(inversionTotal, yearInversion) : null}
+                  subtitle="Suma de todas las campañas, sin distinguir objetivo"
                   delay={0} />
-              )}
-              {metricTotals.map((m, i) => {
-                const s = metricStyle(m.metrica)
-                const key = normKey(m.metrica || '')
-                const prevVal = prevMetricMap[key] || 0
-                const yearVal = yearMetricMap[key] || 0
-                const varVsAnt = prevVal > 0 ? pctChange(m.resultado, prevVal) : null
-                const varVsYear = yearVal > 0 ? pctChange(m.resultado, yearVal) : null
-                const varVsProy = m.meta > 0 ? pctChange(m.resultado, m.meta) : null
-                return (
-                  <KPICard key={m.metrica} title={capitalize(m.metrica)} value={m.resultado}
-                    icon={s.icon} accentColor={s.accent}
-                    variation={varVsAnt}
-                    variationYear={varVsYear}
-                    variationProj={varVsProy}
-                    delay={i + 1} />
-                )
-              })}
               </div>
             </div>
             {paidHallazgos.length > 0 && <PaidMediaExecutiveCard items={paidHallazgos} accent={accent} />}
           </div>
 
-          {/* ── CPR por objetivo a nivel plataforma ── */}
-          {platformCPRs.length > 0 && (
+          {/* ── 2. Resultados por objetivo ── */}
+          {objectiveCards.length > 0 && (
             <div>
               <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-3">
-                Costo por resultado — Plataforma
+                Resultados por objetivo
               </p>
-              <div className={`grid gap-3 ${
-                platformCPRs.length <= 2 ? 'grid-cols-2' :
-                platformCPRs.length <= 3 ? 'grid-cols-3' :
-                'grid-cols-2 lg:grid-cols-4'
-              }`}>
-                {platformCPRs.map((c, i) => {
-                  const s = metricStyle(c.metrica)
-                  const metaVal = platCPRMetaMap[c.key]
-                  const variation = metaVal && metaVal > 0 ? pctChange(c.cpr, metaVal) : null
-                  const altKey = metricObjectiveMap.metricToObj[c.key] || metricObjectiveMap.objToMetric[c.key]
-                  const yearActual = yearPlatformPerformance[c.key] || (altKey ? yearPlatformPerformance[altKey] : null)
-                  const yearInv = yearActual?.inversion || 0
-                  const yearResult = yearActual?.resultado || 0
-                  const yearCpr = yearResult > 0 ? (isCPM(c.metrica) ? (yearInv / yearResult) * 1000 : yearInv / yearResult) : 0
-                  const variationYear = yearCpr > 0 ? pctChange(c.cpr, yearCpr) : null
-                  return (
-                    <KPICard
-                      key={`cpr-${c.key}`}
-                      title={cprLabel(c.metrica)}
-                      value={c.cpr}
-                      icon={Target}
-                      accentColor={s.accent}
-                      formatter={v => `$${formatDecimal(v, 2)}`}
-                      variation={variation}
-                      variationYear={variationYear}
-                      lowerIsBetter
-                      subtitle={metaVal > 0 ? `Meta: $${formatDecimal(metaVal, 2)}` : undefined}
-                      delay={i}
-                    />
-                  )
-                })}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {objectiveCards.map((card, i) => (
+                  <ObjectiveResultCard key={card.key} card={card} accent={metricStyle(card.label).accent} delay={i} />
+                ))}
               </div>
+              <ComparisonLegend className="mt-3" />
             </div>
           )}
 
@@ -424,10 +406,10 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
             <BreakdownInsightsAccordion items={paidHallazgos} accent={accent} />
           )}
 
-          {/* ── Desglose por grupo ── */}
+          {/* ── 3. Desglose por campañas ── */}
           <div>
             <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-3">
-              Desglose por grupo
+              Desglose por campañas
             </p>
 
             {groups.length > 1 && (
@@ -454,13 +436,13 @@ export function PaidMediaSection({ platform, month, campanas, allCampanas = [], 
                     render: v => <span className="text-white/60 text-xs capitalize">{v || '—'}</span> },
                   { key: '_realFromCampaign', label: 'Resultado', align: 'right',
                     render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
-                  { key: 'meta', label: 'Meta', align: 'right',
+                  { key: 'proyeccion', label: 'Proyección', align: 'right',
                     render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
-                  { key: '_vs', label: 'vs Meta', align: 'right',
+                  { key: '_vs', label: 'vs Proyección', align: 'right',
                     render: (_, r) => {
-                      const meta = safeNumber(r.meta), real = safeNumber(r._realFromCampaign)
-                      if (!meta || !real) return <span className="text-white/30">—</span>
-                      const pct = ((real / meta) - 1) * 100
+                      const proy = safeNumber(r.proyeccion), real = safeNumber(r._realFromCampaign)
+                      if (!proy || !real) return <span className="text-white/30">—</span>
+                      const pct = ((real / proy) - 1) * 100
                       return <span className={pct >= 0 ? 'text-emerald-300' : 'text-red-300'}>
                         {pct >= 0 ? '+' : ''}{truncTo(pct, 2)}%
                       </span>

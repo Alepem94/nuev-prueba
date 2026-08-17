@@ -5,6 +5,7 @@ import { SectionHeader, EmptyState } from '../ui/SectionHeader'
 import { ProjectionComboChart } from '../ui/Charts'
 import { safeNumber, formatNumber, formatNumberFull, formatMonthShort, truncTo } from '../../utils/format'
 import { tipoCampanaToBucket, bucketToLabel } from '../../utils/campaigns'
+import { campaignMetricKey, enrichCampaignRows } from '../../utils/historicalAnalytics'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -55,6 +56,36 @@ function computePct(real, meta) {
   return (r / m) * 100
 }
 
+// "Real" ya no se lee del sheet de Proyecciones — se calcula siempre desde
+// Campañas (fb/ig/tiktok) o desde el sheet de Google Ads (google).
+// month → objetivoKey → { resultado, inversion }
+function buildMonthlyObjectivePerformance(campanas, platform, bucket) {
+  const map = {}
+  const rows = enrichCampaignRows(campanas, platform).filter(
+    r => (r._bucket || tipoCampanaToBucket(r.tipo_campana)) === bucket
+  )
+  for (const r of rows) {
+    const key = campaignMetricKey(r)
+    if (!map[r.mes]) map[r.mes] = {}
+    if (!map[r.mes][key]) map[r.mes][key] = { resultado: 0, inversion: 0 }
+    map[r.mes][key].resultado += safeNumber(r.resultado)
+    map[r.mes][key].inversion += safeNumber(r.inversion)
+  }
+  return map
+}
+
+// month → { display, video } — mismo criterio que GoogleAdsSection
+function buildMonthlyGoogleAdsPerformance(googleAdsRows) {
+  const map = {}
+  for (const r of (googleAdsRows || [])) {
+    if (!map[r.mes]) map[r.mes] = { display: 0, video: 0 }
+    const tipo = String(r.tipo_red || r._obj || '').toLowerCase()
+    if (tipo.includes('display')) map[r.mes].display += safeNumber(r.impresiones_visibles)
+    if (tipo.includes('video')) map[r.mes].video += safeNumber(r.views) || safeNumber(r.visualizaciones)
+  }
+  return map
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Platform SVG icons
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,9 +129,9 @@ function PlatformIcon({ platform, size = 20 }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ComplianceCard — used when only 1 month of data
 // ─────────────────────────────────────────────────────────────────────────────
-function ComplianceCard({ metrica, real, meta, observacion }) {
-  const pct = computePct(real, meta)
-  const hasMeta = safeNumber(meta) > 0
+function ComplianceCard({ metrica, real, proyeccion, observacion }) {
+  const pct = computePct(real, proyeccion)
+  const hasMeta = safeNumber(proyeccion) > 0
   const color = pct !== null ? getComplianceColor(pct) : 'rgba(255,255,255,0.4)'
 
   const Icon = pct === null ? null
@@ -116,7 +147,7 @@ function ComplianceCard({ metrica, real, meta, observacion }) {
           <p className="text-3xl font-bold font-display text-white">{formatNumberFull(real)}</p>
           {hasMeta && (
             <p className="text-xs text-white/50 mt-1">
-              Meta: <span className="text-white/70 font-semibold">{formatNumberFull(meta)}</span>
+              Proyección: <span className="text-white/70 font-semibold">{formatNumberFull(proyeccion)}</span>
             </p>
           )}
         </div>
@@ -167,9 +198,9 @@ function ComplianceCard({ metrica, real, meta, observacion }) {
 // MetricSlide — adaptive: 1 month = card, 2+ months = combo chart
 // ─────────────────────────────────────────────────────────────────────────────
 function MetricSlide({ metricRows, color, selectedMonth }) {
-  // metricRows: array of { mes, meta, real, observacion } sorted by mes, filtered by group
+  // metricRows: array of { mes, proyeccion, real, observacion } sorted by mes, filtered by group
   // Filter out rows with no data at all
-  const validRows = metricRows.filter(r => safeNumber(r.real) > 0 || safeNumber(r.meta) > 0)
+  const validRows = metricRows.filter(r => safeNumber(r.real) > 0 || safeNumber(r.proyeccion) > 0)
 
   if (validRows.length === 0) {
     return (
@@ -180,7 +211,7 @@ function MetricSlide({ metricRows, color, selectedMonth }) {
   }
 
   const metrica = validRows[0]?.metrica || validRows[0]?.objetivo || '—'
-  const hasMeta = validRows.some(r => safeNumber(r.meta) > 0)
+  const hasMeta = validRows.some(r => safeNumber(r.proyeccion) > 0)
 
   // Current month row for the card summary
   const currentRow = validRows.find(r => r.mes === selectedMonth) || validRows[validRows.length - 1]
@@ -190,7 +221,7 @@ function MetricSlide({ metricRows, color, selectedMonth }) {
       <ComplianceCard
         metrica={metrica}
         real={currentRow?.real}
-        meta={currentRow?.meta}
+        proyeccion={currentRow?.proyeccion}
         observacion={currentRow?.observacion}
       />
     )
@@ -200,7 +231,7 @@ function MetricSlide({ metricRows, color, selectedMonth }) {
   const chartData = validRows.map(r => ({
     mes: r.mes,
     Real: safeNumber(r.real),
-    Meta: safeNumber(r.meta),
+    Meta: safeNumber(r.proyeccion),
   }))
 
   return (
@@ -215,7 +246,7 @@ function MetricSlide({ metricRows, color, selectedMonth }) {
           )}
         </div>
         {hasMeta && currentRow && (() => {
-          const pct = computePct(currentRow.real, currentRow.meta)
+          const pct = computePct(currentRow.real, currentRow.proyeccion)
           if (pct === null) return null
           const c = getComplianceColor(pct)
           return (
@@ -362,7 +393,7 @@ function MetricCarousel({ metrics, color, selectedMonth }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PlatformCard — one card per platform
 // ─────────────────────────────────────────────────────────────────────────────
-function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObjectiveChange }) {
+function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObjectiveChange, allCampanas, googleAdsData }) {
   const cfg = PLATFORM_CONFIG[platform] || PLATFORM_CONFIG.total
   const color = cfg.color
 
@@ -398,6 +429,13 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
     [platRows, selectedGroup]
   )
 
+  // "Real" mes a mes, calculado desde Campañas (o desde GoogleAds si platform=google) —
+  // ya no se lee del sheet de Proyecciones.
+  const monthlyPerf = useMemo(() => {
+    if (platform === 'google') return buildMonthlyGoogleAdsPerformance(googleAdsData)
+    return buildMonthlyObjectivePerformance(allCampanas, platform, selectedGroup)
+  }, [platform, allCampanas, googleAdsData, selectedGroup])
+
   // Helper: consistent objective key per row — always prefer r.objetivo,
   // fall back to r.metrica. Both lookup and filtering use this same fn.
   const rowObjectiveKey = useCallback((r) => r.objetivo || r.metrica || '', [])
@@ -419,22 +457,36 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
 
   const syncedButUnavailable = syncedObjective && !objectives.includes(syncedObjective)
 
-  // Metrics strictly for the active objective within the current group
+  // Metrics strictly for the active objective within the current group —
+  // cada fila se enriquece con "real" calculado (no leído del sheet).
   const metrics = useMemo(() => {
     if (!activeObjective) return []
     const rows = groupRows.filter(r => rowObjectiveKey(r) === activeObjective)
-    // Group by metrica (the leaf-level metric name)
     const map = new Map()
     for (const r of rows) {
       const key = r.metrica || r.objetivo || '—'
+      let real = 0
+      if (platform === 'google') {
+        const metricaLower = String(r.metrica || '').toLowerCase()
+        const objLower = String(r.objetivo || '').toLowerCase()
+        const perf = monthlyPerf[r.mes]
+        if (perf) {
+          if (objLower === 'display' || metricaLower.includes('impresiones')) real = perf.display
+          else if (objLower === 'video' || metricaLower.includes('view')) real = perf.video
+        }
+      } else {
+        const objKey = campaignMetricKey({ objetivo_detectado: r.objetivo || r.metrica })
+        real = monthlyPerf[r.mes]?.[objKey]?.resultado || 0
+      }
+      const enrichedRow = { ...r, real, proyeccion: safeNumber(r.proyeccion) }
       if (!map.has(key)) map.set(key, [])
-      map.get(key).push(r)
+      map.get(key).push(enrichedRow)
     }
     return Array.from(map.entries()).map(([key, rows]) => ({
       key,
       rows: rows.sort((a, b) => String(a.mes).localeCompare(String(b.mes))),
     }))
-  }, [groupRows, activeObjective, rowObjectiveKey])
+  }, [groupRows, activeObjective, rowObjectiveKey, monthlyPerf, platform])
 
   const handleObjectiveChange = (obj) => {
     setLocalObjective(obj)
@@ -560,6 +612,8 @@ export function ProyeccionesSection({
   selectedMonth,
   loading,
   theme,
+  allCampanas = [],   // todas las campañas, todos los meses (para calcular "real")
+  googleAdsData = [], // sheet GoogleAds, todos los meses (para calcular "real" de Google)
   // legacy props — accepted but not used in new design
   bucket, setBucket, availableBuckets, campanas, observaciones,
 }) {
@@ -598,7 +652,7 @@ export function ProyeccionesSection({
         <EmptyState
           icon={Target}
           title="Sin proyecciones registradas"
-          message="Agrega filas a la hoja 'Proyecciones' con marca, mes, plataforma, métrica y meta."
+          message="Agrega filas a la hoja 'Proyecciones' con marca, mes, plataforma, objetivo/métrica y proyección."
         />
       </div>
     )
@@ -646,6 +700,8 @@ export function ProyeccionesSection({
               selectedMonth={selectedMonth}
               syncedObjective={syncActive ? syncedObjective : null}
               onObjectiveChange={handleObjectiveChange}
+              allCampanas={allCampanas}
+              googleAdsData={googleAdsData}
             />
           ))
         ) : (

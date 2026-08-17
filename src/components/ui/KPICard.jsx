@@ -4,27 +4,48 @@ import { LineChart, Line, ResponsiveContainer, Area, AreaChart } from 'recharts'
 import { useCountUp } from '../../hooks/useCountUp'
 import { formatNumber, truncTo } from '../../utils/format'
 
-function VariationBadge({ value, label, lowerIsBetter = false }) {
+// Siglas estandarizadas para comparaciones — ver <ComparisonLegend/> para la nota completa.
+export const COMPARISON_LABELS = {
+  ma: { sigla: 'MA', full: 'vs. Mes Anterior' },
+  aa: { sigla: 'AA', full: 'vs. Año Anterior (mismo mes)' },
+  proy: { sigla: 'PROY', full: 'vs. Proyección / meta del mes' },
+}
+
+export function VariationBadge({ value, kind = 'ma', lowerIsBetter = false }) {
   const num = parseFloat(value)
   if (isNaN(num)) return null
   const isPos = num > 0
   const isNeg = num < 0
   const isGood = lowerIsBetter ? isNeg : isPos
   const isBad = lowerIsBetter ? isPos : isNeg
+  const { sigla, full } = COMPARISON_LABELS[kind] || COMPARISON_LABELS.ma
   return (
     <div
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold max-w-full min-w-0
         ${isGood ? 'badge-positive' : ''}
         ${isBad ? 'badge-negative' : ''}
         ${!isPos && !isNeg ? 'badge-neutral' : ''}`}
-      title={label}
+      title={full}
     >
       {isPos && <TrendingUp className="w-3 h-3 shrink-0" />}
       {isNeg && <TrendingDown className="w-3 h-3 shrink-0" />}
       {!isPos && !isNeg && <Minus className="w-2.5 h-2.5 shrink-0" />}
       <span className="font-bold shrink-0">{isPos ? '+' : ''}{truncTo(num, 2)}%</span>
-      {label && <span className="opacity-70 ml-0.5 truncate">{label}</span>}
+      <span className="opacity-70 ml-0.5 shrink-0">{sigla}</span>
     </div>
+  )
+}
+
+// Nota aclaratoria — colocar una vez por sección donde aparezcan estas siglas
+// (por ejemplo, al pie de Paid Media), no en cada card.
+export function ComparisonLegend({ className = '' }) {
+  return (
+    <p className={`text-[11px] text-white/35 ${className}`}>
+      <span className="font-semibold text-white/45">MA</span> = mes anterior ·{' '}
+      <span className="font-semibold text-white/45">AA</span> = mismo mes, año anterior ·{' '}
+      <span className="font-semibold text-white/45">PROY</span> = meta/proyección del mes ·{' '}
+      <span className="font-semibold text-white/45">RTR</span> = tasa de resultado definida en Proyecciones
+    </p>
   )
 }
 
@@ -96,9 +117,9 @@ export function KPICard({
 
           {(hasVar || hasProj || hasYear) && (
             <div className="flex flex-col items-end gap-1 min-w-0 max-w-[62%]">
-              {hasVar && <VariationBadge value={variation} label="vs período" lowerIsBetter={lowerIsBetter} />}
-              {hasProj && <VariationBadge value={variationProj} label="vs proyección" lowerIsBetter={lowerIsBetter} />}
-              {hasYear && <VariationBadge value={variationYear} label="vs año ant." lowerIsBetter={lowerIsBetter} />}
+              {hasVar && <VariationBadge value={variation} kind="ma" lowerIsBetter={lowerIsBetter} />}
+              {hasProj && <VariationBadge value={variationProj} kind="proy" lowerIsBetter={lowerIsBetter} />}
+              {hasYear && <VariationBadge value={variationYear} kind="aa" lowerIsBetter={lowerIsBetter} />}
             </div>
           )}
         </div>

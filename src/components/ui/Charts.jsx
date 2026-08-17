@@ -592,7 +592,7 @@ function ProjectionTooltip({ active, payload, label, labelFormatter }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#facc15', flexShrink: 0 }} />
-        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Meta:</span>
+        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Proyección:</span>
         <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, marginLeft: 'auto', paddingLeft: 12 }}>{formatNumberFull(metaVal)}</span>
       </div>
       {metaVal > 0 && (
